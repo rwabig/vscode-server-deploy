@@ -9,17 +9,13 @@
     code_server_password: "{{ vault_code_server_password }}"
     project_directory: "/opt/vscode-server"
     timezone: "UTC"
-    letsencrypt_environment: "production"
+    letsencrypt_environment: "production"   # "staging" or "production"
     backup_directory: "/var/backups/vscode-server"
 
-    # 🔒 SAFETY CONTROLS — NEVER DESTROYS DATA BY DEFAULT
+    # SAFETY: never wipe Docker data unless explicitly enabled
     docker_allow_data_wipe: false
-    docker_wipe_confirm: ""
 
   pre_tasks:
-    # ------------------------------------------------------------
-    # SAFETY & PLATFORM ASSERTIONS
-    # ------------------------------------------------------------
     - name: Assert supported OS
       assert:
         that:
@@ -27,14 +23,23 @@
           - ansible_facts['distribution_version'] is version("22.04", ">=")
         fail_msg: "Only Ubuntu 22.04+ supported"
 
-    - name: Fail if destructive Docker wipe is not explicitly confirmed
-      assert:
-        that:
-          - docker_wipe_confirm == "DESTROY-DOCKER-DATA"
-        fail_msg: >
-          Refusing to wipe Docker data. To enable, set:
-          docker_allow_data_wipe=true AND docker_wipe_confirm=DESTROY-DOCKER-DATA
+    - name: Warn if Docker data wipe enabled
+      debug:
+        msg: "⚠️  docker_allow_data_wipe=true will DESTROY ALL Docker containers and images!"
       when: docker_allow_data_wipe | bool
+
+    - name: Require explicit confirmation for Docker data wipe
+      pause:
+        prompt: "Type 'DESTROY-DOCKER-DATA' to confirm wiping ALL Docker data"
+      when: docker_allow_data_wipe | bool
+      register: wipe_confirmation
+
+    - name: Fail if destructive Docker wipe is not explicitly confirmed
+      fail:
+        msg: "Docker data wipe aborted — confirmation string mismatch"
+      when:
+        - docker_allow_data_wipe | bool
+        - wipe_confirmation.user_input != "DESTROY-DOCKER-DATA"
 
   tasks:
     # ------------------------------------------------------------
@@ -61,7 +66,7 @@
         name: "{{ timezone }}"
 
     # ------------------------------------------------------------
-    # DOCKER — PHASE 1: Remove only conflicting Ubuntu packages
+    # DOCKER — PHASE 1: Remove conflicting Ubuntu packages only
     # ------------------------------------------------------------
     - name: Remove conflicting Docker packages (SAFE)
       apt:
@@ -72,7 +77,7 @@
         state: absent
 
     # ------------------------------------------------------------
-    # DOCKER — PHASE 2: Repo + install (clean, idempotent)
+    # DOCKER — PHASE 2: Install Docker CE cleanly
     # ------------------------------------------------------------
     - name: Remove legacy Docker repo/key conflicts
       file:
@@ -117,12 +122,12 @@
         state: present
 
     # ------------------------------------------------------------
-    # DOCKER — PHASE 3: OPTIONAL DESTRUCTIVE WIPE (EXPLICIT ONLY)
+    # DOCKER — PHASE 3: Optional destructive wipe (explicit only)
     # ------------------------------------------------------------
     - name: Check if Docker service exists
       stat:
         path: /lib/systemd/system/docker.service
-      register: docker_service
+      register: docker_service_unit
 
     - block:
         - name: Stop Docker before wipe
@@ -149,16 +154,20 @@
 
       when:
         - docker_allow_data_wipe | bool
-        - docker_service.stat.exists
+        - wipe_confirmation.user_input == "DESTROY-DOCKER-DATA"
+        - docker_service_unit.stat.exists
 
     # ------------------------------------------------------------
-    # DOCKER — PHASE 4: Enable runtime
+    # DOCKER — PHASE 4: Enable runtime (check-mode safe)
     # ------------------------------------------------------------
     - name: Enable Docker service
       systemd:
         name: docker
         state: started
         enabled: yes
+      when:
+        - docker_service_unit.stat.exists
+        - not ansible_check_mode
 
     - name: Add user to docker group
       user:
@@ -213,6 +222,13 @@
         - "{{ project_directory }}/data/nginx/letsencrypt"
         - "{{ project_directory }}/scripts"
         - "{{ backup_directory }}"
+
+    - name: Ensure code-server volume permissions (non-root UID 1000)
+      file:
+        path: "{{ project_directory }}/data/code-server"
+        owner: "1000"
+        group: "1000"
+        recurse: true
 
     # ------------------------------------------------------------
     # CONFIG FILES
@@ -274,6 +290,7 @@
       command: docker compose up -d
       args:
         chdir: "{{ project_directory }}"
+      when: not ansible_check_mode
       register: compose_result
       changed_when: "'Started' in compose_result.stdout or 'Recreated' in compose_result.stdout"
 
@@ -281,12 +298,14 @@
       command: "{{ project_directory }}/scripts/init-letsencrypt.sh"
       args:
         creates: "{{ project_directory }}/data/nginx/letsencrypt/live/{{ domain_name }}/fullchain.pem"
+      when: not ansible_check_mode
 
     - name: Wait for HTTPS to be reachable
       wait_for:
         host: "{{ domain_name }}"
         port: 443
         timeout: 60
+      when: not ansible_check_mode
 
     # ------------------------------------------------------------
     # OUTPUT
