@@ -6,10 +6,6 @@
   vars:
     domain_name: "ide.ucclab.io"
     admin_email: "admin@ucclab.io"
-
-    # 🔐 Comes from ansible-vault encrypt_string --name vscode_password
-    code_server_password: "{{ vscode_password }}"
-
     project_directory: "/opt/vscode-server"
     timezone: "UTC"
     letsencrypt_environment: "production"
@@ -20,6 +16,27 @@
     docker_wipe_confirm: ""
 
   pre_tasks:
+    # ------------------------------------------------------------
+    # PASSWORD HANDLING (SIMPLE & SECURE)
+    # ------------------------------------------------------------
+    - name: Set password from extra-vars or prompt
+      set_fact:
+        code_server_password: "{{ lookup('password', prompt='Enter VS Code password: ', confirm=True) }}"
+      when:
+        - code_server_password is not defined
+        - not ansible_check_mode
+      no_log: true
+
+    - name: Validate password (check mode safe)
+      assert:
+        that:
+          - code_server_password is defined or ansible_check_mode
+        fail_msg: |
+          Password required. Provide via:
+          1. Interactive: Run without --check
+          2. Command line: --extra-vars 'code_server_password=YourPass'
+          3. Environment: export code_server_password=YourPass
+
     # ------------------------------------------------------------
     # SAFETY & PLATFORM ASSERTIONS
     # ------------------------------------------------------------
@@ -101,7 +118,7 @@
 
     - name: Add Docker repository
       apt_repository:
-        repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu {{ ansible_facts['distribution_release'] }} stable"
+        repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu {{ ansible_lsb.codename | default('jammy') }} stable"
         state: present
         filename: docker
 
@@ -259,6 +276,7 @@
         src: ../docker/docker-compose.yml.j2
         dest: "{{ project_directory }}/docker-compose.yml"
         mode: "0644"
+      no_log: true
 
     - name: Deploy nginx.conf
       template:
