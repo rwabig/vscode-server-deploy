@@ -154,28 +154,18 @@
     # ------------------------------------------------------------
     # DOCKER — PHASE 4: Enable runtime (check-mode safe)
     # ------------------------------------------------------------
+    - name: Check if docker binary exists
+      stat:
+        path: /usr/bin/docker
+      register: docker_binary
+
     - name: Enable Docker service
       systemd:
         name: docker
         state: started
         enabled: yes
       when:
-        - docker_service.stat.exists
-        - not ansible_check_mode
-
-    - name: Add user to docker group
-      user:
-        name: "{{ ansible_facts.user_id }}"
-        groups: docker
-        append: yes
-      register: docker_group_change
-
-    # Do NOT exec newgrp inside Ansible — it breaks sessions.
-    - name: Notify docker group membership change
-      debug:
-        msg: "⚠️ Docker group membership updated. Log out and back in for docker CLI access."
-      when:
-        - docker_group_change.changed
+        - docker_binary.stat.exists
         - not ansible_check_mode
 
     # ------------------------------------------------------------
