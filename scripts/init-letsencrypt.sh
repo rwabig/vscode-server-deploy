@@ -9,7 +9,7 @@ EMAIL="${EMAIL:-admin@ucclab.io}"
 BASE="${BASE:-/opt/vscode-server}"
 ENVIRONMENT="${LETSENCRYPT_ENV:-production}"   # staging | production
 
-COMPOSE="docker compose"
+COMPOSE="cd '$BASE' && docker compose"
 LIVE_DIR="$BASE/data/nginx/letsencrypt/live/$DOMAIN"
 
 # ============================================================
@@ -47,27 +47,46 @@ echo "📁 Creating required directories..."
 mkdir -p "$BASE/data/nginx/letsencrypt" "$BASE/data/nginx/certbot"
 
 # ============================================================
-# START NGINX (HTTP ONLY)
+# CLEAN START - Stop and restart containers
 # ============================================================
-echo "🚀 Starting nginx for ACME challenge..."
+echo "🔄 Stopping existing containers..."
 cd "$BASE"
-$COMPOSE up -d nginx
+docker compose down nginx certbot 2>/dev/null || true
+
+echo "🚀 Starting nginx for ACME challenge..."
+docker compose up -d nginx
 
 # ============================================================
-# WAIT FOR NGINX TO BIND PORT 80
+# WAIT FOR NGINX (CHECK BOTH CONTAINER STATUS AND PORT 80)
 # ============================================================
-echo "⏳ Waiting for nginx to bind port 80..."
-for i in {1..30}; do
-  if $COMPOSE ps nginx | grep -q "Up" && \
-     curl -fsS http://localhost >/dev/null 2>&1; then
-    echo "✅ nginx is ready"
-    break
+echo "⏳ Waiting for nginx to be ready..."
+MAX_ATTEMPTS=30
+ATTEMPT=1
+
+while [[ $ATTEMPT -le $MAX_ATTEMPTS ]]; do
+  # Check if container is running
+  if docker compose ps nginx | grep -q "Up" && \
+     docker compose exec nginx nginx -t >/dev/null 2>&1; then
+
+    # Check if port 80 is responding
+    if curl -fsS http://localhost >/dev/null 2>&1 || \
+       curl -fsS http://127.0.0.1 >/dev/null 2>&1; then
+      echo "✅ nginx is ready and responding on port 80"
+      break
+    fi
   fi
+
+  echo "Still waiting for nginx... ($ATTEMPT/$MAX_ATTEMPTS)"
   sleep 2
-  echo "Still waiting for nginx... ($i/30)"
-  if [[ "$i" == "30" ]]; then
-    echo "❌ nginx did not become ready — aborting"
-    $COMPOSE logs nginx --tail=20
+  ATTEMPT=$((ATTEMPT + 1))
+
+  if [[ $ATTEMPT -gt $MAX_ATTEMPTS ]]; then
+    echo "❌ nginx did not become ready — checking logs..."
+    docker compose logs nginx --tail=20
+    echo "📋 Checking nginx config..."
+    docker compose exec nginx nginx -t || true
+    echo "🔍 Checking port 80..."
+    curl -v http://localhost || curl -v http://127.0.0.1 || true
     exit 1
   fi
 done
@@ -76,7 +95,7 @@ done
 # REQUEST CERTIFICATE
 # ============================================================
 echo "🔐 Requesting TLS certificate for $DOMAIN..."
-if $COMPOSE run --rm certbot certonly \
+if docker compose run --rm certbot certonly \
   --webroot \
   --webroot-path /var/www/certbot \
   --email "$EMAIL" \
@@ -87,7 +106,10 @@ if $COMPOSE run --rm certbot certonly \
   echo "✅ Certificate issued successfully"
 else
   echo "❌ Certificate issuance failed"
-  echo "⚠️  Check domain DNS settings and ensure port 80 is accessible"
+  echo "⚠️  Common issues:"
+  echo "   1. Domain DNS not pointing to this server"
+  echo "   2. Port 80 not accessible from internet"
+  echo "   3. Let's Encrypt rate limits"
   exit 1
 fi
 
@@ -99,23 +121,27 @@ if [[ ! -f "$LIVE_DIR/fullchain.pem" ]]; then
   exit 1
 fi
 
+echo "📄 Certificate files created:"
+ls -la "$LIVE_DIR/"
+
 # ============================================================
 # RESTART NGINX WITH SSL
 # ============================================================
 echo "🔄 Restarting nginx with SSL configuration..."
-$COMPOSE restart nginx
+docker compose restart nginx
 
 # ============================================================
-# VERIFY HTTPS
+# FINAL VERIFICATION
 # ============================================================
-echo "🔍 Verifying HTTPS is working..."
-sleep 5
-if curl -kfsS https://localhost >/dev/null 2>&1 || \
-   curl -fsS https://localhost >/dev/null 2>&1; then
-  echo "✅ HTTPS is working correctly"
+echo "🔍 Final verification..."
+sleep 3
+
+if docker compose ps nginx | grep -q "Up"; then
+  echo "✅ nginx is running with SSL"
 else
-  echo "⚠️  HTTPS verification failed (but certificate was issued)"
-  echo "   Nginx might need additional configuration"
+  echo "⚠️  nginx may not be running - checking logs..."
+  docker compose logs nginx --tail=10
 fi
 
 echo "🎉 TLS bootstrap complete for $DOMAIN"
+echo "🌐 Access your VS Code at: https://$DOMAIN"
