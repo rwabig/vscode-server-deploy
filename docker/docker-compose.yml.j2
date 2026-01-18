@@ -1,6 +1,6 @@
 services:
   code-server:
-    image: "{{ code_server_image | default('codercom/code-server:4.26.1') }}"
+    image: "{{ code_server_image | default('codercom/code-server:4.108.1') }}"
     container_name: code-server
     restart: unless-stopped
 
@@ -37,7 +37,7 @@ services:
     networks: [vscode-net]
 
   nginx:
-    image: "{{ nginx_image | default('nginx:1.25.4-alpine') }}"
+    image: "{{ nginx_image | default('nginx:1.28.1-alpine') }}"
     container_name: nginx-proxy
     restart: unless-stopped
 
@@ -75,7 +75,7 @@ services:
     networks: [vscode-net]
 
   certbot:
-    image: "{{ certbot_image | default('certbot/certbot:v2.9.0') }}"
+    image: "{{ certbot_image | default('certbot/certbot:v2.10.0') }}"
     container_name: certbot
     restart: "no"
 
