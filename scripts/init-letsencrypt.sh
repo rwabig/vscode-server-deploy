@@ -47,17 +47,20 @@ $COMPOSE up -d nginx
 # WAIT FOR NGINX TO BIND PORT 80
 # ============================================================
 echo "⏳ Waiting for nginx to accept connections..."
-for i in {1..15}; do
-  if docker ps --format '{{.Names}}' | grep -qx nginx-proxy &&
-     docker inspect -f '{{.State.Running}}' nginx-proxy | grep -qx true &&
-     curl -fsS http://127.0.0.1 >/dev/null 2>&1; then
+sleep 10  # Give nginx more time to start
+
+for i in {1..30}; do
+  if curl -fsS http://127.0.0.1 >/dev/null 2>&1 || \
+     curl -fsS http://localhost >/dev/null 2>&1; then
     echo "✅ nginx is ready"
     break
   fi
   sleep 2
-  if [[ "$i" == "15" ]]; then
-    echo "❌ nginx did not become ready — aborting"
-    echo "   Check: docker compose logs nginx"
+  echo "Still waiting for nginx... ($i/30)"
+  if [[ "$i" == "30" ]]; then
+    echo "❌ nginx did not become ready — checking status..."
+    docker compose ps
+    docker compose logs nginx --tail=20
     exit 1
   fi
 done
