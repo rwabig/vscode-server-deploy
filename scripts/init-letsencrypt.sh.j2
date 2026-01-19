@@ -1,53 +1,63 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DOMAIN="${DOMAIN:-{{ deployment_domain }}}"
-EMAIL="${EMAIL:-{{ deployment_email }}}"
+DOMAIN="{{ deployment_domain }}"
+EMAIL="{{ deployment_email }}"
+STAGING="${letsencrypt_env:-}"
+
 BASE="/opt/vscode-server"
-ENV="${LETSENCRYPT_ENV:-production}"
+DATA_PATH="$BASE/data/nginx"
 
-CERT_DIR="$BASE/data/nginx/letsencrypt/live/$DOMAIN"
+log() {
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"
+}
 
-if [[ -d "$CERT_DIR" ]]; then
-  echo "✅ Certificate already exists for $DOMAIN"
-  exit 0
-fi
-
-echo "⚠️  ${ENV^^}: Let's Encrypt rate limits apply"
-echo "🚀 Starting nginx for ACME challenge..."
-
-docker compose -f "$BASE/docker-compose.yml" up -d nginx
-
-echo "⏳ Waiting for nginx to bind port 80..."
-for i in {1..20}; do
-  if curl -fs http://localhost >/dev/null 2>&1; then
-    break
-  fi
-  sleep 2
-done
-
-if ! curl -fs http://localhost >/dev/null 2>&1; then
-  echo "❌ nginx did not become ready"
-  docker compose -f "$BASE/docker-compose.yml" logs nginx
+if [[ -z "$DOMAIN" || -z "$EMAIL" ]]; then
+  echo "❌ DOMAIN or EMAIL not set"
   exit 1
 fi
 
-STAGING_FLAG=""
-[[ "$ENV" == "staging" ]] && STAGING_FLAG="--staging"
+cd "$BASE"
 
-echo "🔐 Requesting certificate for $DOMAIN..."
+if [[ -d "$DATA_PATH/letsencrypt/live/$DOMAIN" ]]; then
+  log "✅ Existing certificate found for $DOMAIN — skipping bootstrap"
+  exit 0
+fi
 
-docker compose -f "$BASE/docker-compose.yml" run --rm certbot certonly \
+log "🚀 Starting nginx for ACME challenge..."
+docker compose up -d nginx
+
+log "⏳ Waiting for nginx to bind port 80..."
+for i in {1..30}; do
+  if ss -ltn sport = :80 >/dev/null 2>&1; then
+    break
+  fi
+  sleep 1
+done
+
+if ! ss -ltn sport = :80 >/dev/null 2>&1; then
+  log "❌ nginx did not become ready"
+  docker compose logs nginx || true
+  exit 1
+fi
+
+log "📜 Requesting certificate for $DOMAIN..."
+
+STAGING_ARGS=""
+if [[ "$STAGING" == "staging" ]]; then
+  STAGING_ARGS="--staging"
+fi
+
+docker compose run --rm certbot certonly \
   --webroot \
-  --webroot-path /var/www/certbot \
+  --webroot-path=/var/www/certbot \
   --email "$EMAIL" \
   --agree-tos \
   --no-eff-email \
-  $STAGING_FLAG \
+  $STAGING_ARGS \
   -d "$DOMAIN"
 
-echo "🔄 Reloading nginx with HTTPS..."
+log "🔄 Reloading nginx with certificates..."
+docker compose exec nginx nginx -s reload
 
-docker compose -f "$BASE/docker-compose.yml" exec nginx nginx -s reload
-
-echo "✅ TLS bootstrap complete"
+log "✅ Certificate bootstrap complete"

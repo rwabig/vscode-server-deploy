@@ -41,6 +41,7 @@ services:
     container_name: nginx-proxy
     restart: unless-stopped
 
+    user: "101:101"
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
@@ -67,9 +68,9 @@ services:
 
     healthcheck:
       test: ["CMD-SHELL", "wget -q --spider http://localhost || exit 1"]
-      interval: 20s
-      timeout: 3s
-      retries: 5
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
     networks: [vscode-net]
 

@@ -284,6 +284,21 @@
         - { path: "{{ project_directory }}/data/nginx/run",             owner: "101",  group: "101",  mode: "0755" }
       when: not ansible_check_mode
 
+    - name: Create nginx runtime directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: "101"
+        group: "101"
+        mode: "0755"
+      loop:
+        - /opt/vscode-server/data/nginx/cache/client_temp
+        - /opt/vscode-server/data/nginx/cache/proxy_temp
+        - /opt/vscode-server/data/nginx/cache/fastcgi_temp
+        - /opt/vscode-server/data/nginx/cache/uwsgi_temp
+        - /opt/vscode-server/data/nginx/cache/scgi_temp
+        - /opt/vscode-server/data/nginx/run
+
     # ------------------------------------------------------------
     # CONFIG FILES
     # ------------------------------------------------------------
