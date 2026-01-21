@@ -80,7 +80,6 @@ services:
     container_name: certbot
     restart: "no"
 
-    user: "101:101"
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     pids_limit: 64
