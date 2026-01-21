@@ -75,7 +75,7 @@ services:
 
     networks: [vscode-net]
 
-    certbot:
+  certbot:
     image: "{{ certbot_image | default('certbot/certbot:v2.10.0') }}"
     container_name: certbot
     restart: "no"
