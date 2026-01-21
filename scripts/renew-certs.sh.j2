@@ -5,7 +5,6 @@ set -euo pipefail
 # CONFIGURATION
 # ============================================================
 BASE="/opt/vscode-server"
-CERTBOT_LOG_DIR="$BASE/data/nginx/letsencrypt/logs"
 LOG_FILE="/var/log/certbot-renew.log"
 
 log() {
@@ -14,15 +13,13 @@ log() {
 
 cd "$BASE"
 
-# Ensure certbot logs directory exists
-mkdir -p "$CERTBOT_LOG_DIR"
-chown 101:101 "$CERTBOT_LOG_DIR" || true
-chmod 0755 "$CERTBOT_LOG_DIR"
-
 log "Starting certificate renewal check..."
 
 # Attempt renewal (certbot only renews if needed)
-if docker compose run --rm certbot renew --quiet --logs-dir /var/log/letsencrypt; then
+if docker compose run --rm certbot renew --quiet \
+  --logs-dir /var/log/certbot \
+  --work-dir /var/lib/certbot \
+  --config-dir /etc/letsencrypt; then
   log "Certificate renewal check complete"
 else
   log "❌ Certificate renewal failed"

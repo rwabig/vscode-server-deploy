@@ -48,15 +48,19 @@ if [[ "$STAGING" == "staging" ]]; then
   STAGING_ARGS="--staging"
 fi
 
+LOG_DIR="/var/log/certbot"
+WORK_DIR="/var/lib/certbot"
+CONFIG_DIR="/etc/letsencrypt"
+
 docker compose run --rm certbot certonly \
   --webroot \
   --webroot-path=/var/www/certbot \
-  --config-dir /etc/letsencrypt \
-  --work-dir /var/lib/letsencrypt \
-  --logs-dir /var/log/letsencrypt \
   --email "$EMAIL" \
   --agree-tos \
   --no-eff-email \
+  --logs-dir "$LOG_DIR" \
+  --work-dir "$WORK_DIR" \
+  --config-dir "$CONFIG_DIR" \
   $STAGING_ARGS \
   -d "$DOMAIN"
 
