@@ -56,7 +56,8 @@ services:
       - ./data/nginx/conf.d:/etc/nginx/conf.d:ro
       - ./data/nginx/certbot:/var/www/certbot:ro
       - ./data/nginx/letsencrypt:/etc/letsencrypt:ro
-      - ./data/nginx/letsencrypt/logs:/var/log/letsencrypt:rw
+      - ./data/nginx/letsencrypt/logs:/var/log/certbot:rw
+      - ./data/nginx/letsencrypt/work:/var/lib/certbot:rw
       - ./data/nginx/cache:/var/cache/nginx:rw
       - ./data/nginx/run:/var/run:rw
 
