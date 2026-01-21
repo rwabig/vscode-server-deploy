@@ -358,6 +358,17 @@
         hour: "3"
         job: "{{ project_directory }}/scripts/renew-certs.sh"
 
+    - name: Create certbot runtime directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: "101"
+        group: "101"
+        mode: "0755"
+      loop:
+        - /opt/vscode-server/data/nginx/letsencrypt/logs
+        - /opt/vscode-server/data/nginx/letsencrypt/work
+
     # ------------------------------------------------------------
     # START SERVICES
     # ------------------------------------------------------------

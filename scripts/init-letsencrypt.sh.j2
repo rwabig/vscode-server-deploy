@@ -3,11 +3,10 @@ set -euo pipefail
 
 DOMAIN="{{ deployment_domain }}"
 EMAIL="{{ deployment_email }}"
-STAGING="{{ letsencrypt_env | default('') }}"
+STAGING="${letsencrypt_env:-}"
 
 BASE="/opt/vscode-server"
 DATA_PATH="$BASE/data/nginx"
-LOGS_DIR="/var/log/letsencrypt"
 
 log() {
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"
@@ -52,11 +51,13 @@ fi
 docker compose run --rm certbot certonly \
   --webroot \
   --webroot-path=/var/www/certbot \
+  --config-dir /etc/letsencrypt \
+  --work-dir /var/lib/letsencrypt \
+  --logs-dir /var/log/letsencrypt \
   --email "$EMAIL" \
   --agree-tos \
   --no-eff-email \
   $STAGING_ARGS \
-  --logs-dir "$LOGS_DIR" \
   -d "$DOMAIN"
 
 log "🔄 Reloading nginx with certificates..."

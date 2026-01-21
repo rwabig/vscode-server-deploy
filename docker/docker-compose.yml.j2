@@ -89,6 +89,7 @@ services:
       - ./data/nginx/letsencrypt:/etc/letsencrypt:rw
       - ./data/nginx/certbot:/var/www/certbot:rw
       - ./data/nginx/letsencrypt/logs:/var/log/letsencrypt:rw
+      - ./data/nginx/letsencrypt/work:/var/lib/letsencrypt:rw
       - /etc/ssl/certs:/etc/ssl/certs:ro
 
     tmpfs:
