@@ -52,7 +52,7 @@ LOG_DIR="/var/log/certbot"
 WORK_DIR="/var/lib/certbot"
 CONFIG_DIR="/etc/letsencrypt"
 
-docker compose run --rm certbot certonly \
+docker compose run --rm --user 0:0 certbot certonly \
   --webroot \
   --webroot-path=/var/www/certbot \
   --email "$EMAIL" \

@@ -1,9 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# ============================================================
-# CONFIGURATION
-# ============================================================
 BASE="/opt/vscode-server"
 LOG_FILE="/var/log/certbot-renew.log"
 
@@ -15,8 +12,7 @@ cd "$BASE"
 
 log "Starting certificate renewal check..."
 
-# Attempt renewal (certbot only renews if needed)
-if docker compose run --rm certbot renew --quiet \
+if docker compose run --rm --user 0:0 certbot renew --quiet \
   --logs-dir /var/log/certbot \
   --work-dir /var/lib/certbot \
   --config-dir /etc/letsencrypt; then
@@ -26,7 +22,6 @@ else
   exit 1
 fi
 
-# Reload nginx only if running
 if docker compose ps nginx | grep -q "Up"; then
   if docker compose exec nginx nginx -s reload; then
     log "Nginx reloaded successfully"
