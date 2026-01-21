@@ -283,8 +283,7 @@
         - { path: "{{ project_directory }}/data/code-server/config",   owner: "1000", group: "1000", mode: "0755" }
         - { path: "{{ project_directory }}/data/nginx/cache",           owner: "101",  group: "101",  mode: "0755" }
         - { path: "{{ project_directory }}/data/nginx/run",             owner: "101",  group: "101",  mode: "0755" }
-        - { path: "{{ project_directory }}/data/nginx/letsencrypt/logs", owner: "101", group: "101", mode: "0755" }
-      when: not ansible_check_mode
+        - { path: "{{ project_directory }}/data/nginx/letsencrypt/logs", owner: "0", group: "0", mode: "0755" }
 
     - name: Create nginx runtime directories
       file:
@@ -362,8 +361,8 @@
       file:
         path: "{{ item }}"
         state: directory
-        owner: "101"
-        group: "101"
+        owner: "0"
+        group: "0"
         mode: "0755"
       loop:
         - /opt/vscode-server/data/nginx/letsencrypt/logs
