@@ -25,15 +25,17 @@ server {
     ssl_certificate_key /etc/letsencrypt/live/{{ domain_name }}/privkey.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
 
-    # Healthcheck endpoint (no auth)
-    location = /.healthz {
-        return 200 "ok\n";
-        add_header Content-Type text/plain;
-    }
-
-    location / {
+    # ---- AUTH GATE (no websocket upgrade here) ----
+    location = /auth {
+        internal;
         auth_basic "Restricted Access";
         auth_basic_user_file /etc/nginx/auth/htpasswd;
+        return 204;
+    }
+
+    # ---- MAIN APP ----
+    location / {
+        auth_request /auth;
 
         proxy_pass http://code-server:8080;
         proxy_http_version 1.1;
@@ -47,5 +49,11 @@ server {
         proxy_set_header Connection $connection_upgrade;
 
         proxy_buffering off;
+    }
+
+    # Healthcheck (no auth)
+    location = /.healthz {
+        return 200 "ok\n";
+        add_header Content-Type text/plain;
     }
 }
