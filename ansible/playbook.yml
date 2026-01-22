@@ -24,26 +24,27 @@
 
   pre_tasks:
     # ------------------------------------------------------------
-    # PASSWORD HANDLING
+    # PASSWORD HANDLING (SECRET-BASED)
     # ------------------------------------------------------------
-    - name: Set password from extra-vars or prompt
-      set_fact:
-        code_server_password: "{{ lookup('password', prompt='Enter VS Code password: ', confirm=True) }}"
-      when:
-        - code_server_password is not defined
-        - not ansible_check_mode
+    - name: Prompt for code-server password (hidden)
+      pause:
+        prompt: "Enter VS Code login password:"
+        echo: no
+      register: code_server_password_input
+      when: not ansible_check_mode
       no_log: true
 
-    - name: Validate password
+    - name: Validate password provided
       assert:
         that:
-          - code_server_password is defined or ansible_check_mode
+          - code_server_password_input.user_input | length > 0 or ansible_check_mode
         fail_msg: |
-          Password required. Provide via:
-          1. Interactive
-          2. --extra-vars 'code_server_password=YourPass'
-          3. export code_server_password=YourPass
+          Password required. Please enter a non-empty password.
+      no_log: true
 
+    # ------------------------------------------------------------
+    # PLATFORM SAFETY
+    # ------------------------------------------------------------
     - name: Validate domain and email
       assert:
         that:
@@ -54,9 +55,6 @@
           Domain and email must be configured!
           --extra-vars 'deployment_domain=your.domain.com deployment_email=admin@yourdomain.com'
 
-    # ------------------------------------------------------------
-    # PLATFORM SAFETY
-    # ------------------------------------------------------------
     - name: Assert supported OS
       assert:
         that:
@@ -267,6 +265,7 @@
         - "{{ project_directory }}/data/nginx/run"
         - "{{ project_directory }}/data/nginx/letsencrypt/logs"
         - "{{ project_directory }}/scripts"
+        - "{{ project_directory }}/secrets"
         - "{{ backup_directory }}"
 
     # ------------------------------------------------------------
@@ -284,6 +283,7 @@
         - { path: "{{ project_directory }}/data/nginx/cache",           owner: "101",  group: "101",  mode: "0755" }
         - { path: "{{ project_directory }}/data/nginx/run",             owner: "101",  group: "101",  mode: "0755" }
         - { path: "{{ project_directory }}/data/nginx/letsencrypt/logs", owner: "0", group: "0", mode: "0755" }
+        - { path: "{{ project_directory }}/secrets", owner: "0", group: "0", mode: "0700" }
 
     - name: Create nginx runtime directories
       file:
@@ -299,6 +299,19 @@
         - /opt/vscode-server/data/nginx/cache/uwsgi_temp
         - /opt/vscode-server/data/nginx/cache/scgi_temp
         - /opt/vscode-server/data/nginx/run
+
+    # ------------------------------------------------------------
+    # SECRET MATERIALIZATION (ROOT-ONLY)
+    # ------------------------------------------------------------
+    - name: Write code-server password secret
+      copy:
+        dest: "{{ project_directory }}/secrets/code_server_password"
+        content: "{{ code_server_password_input.user_input }}"
+        owner: root
+        group: root
+        mode: "0600"
+      no_log: true
+      when: not ansible_check_mode
 
     # ------------------------------------------------------------
     # CONFIG FILES
@@ -430,7 +443,7 @@
           - ""
           - "📋 Access Information:"
           - "   HTTPS URL: https://{{ domain_name }}/"
-          - "   Password: [The password you entered during deployment]"
+          - "   Password: [Stored securely in {{ project_directory }}/secrets/code_server_password]"
           - ""
           - "🔧 Management Commands:"
           - "   Start/Stop: cd {{ project_directory }} && docker compose [up/down]"

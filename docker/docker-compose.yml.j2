@@ -13,12 +13,15 @@ services:
 
     environment:
       TZ: UTC
-      PASSWORD: "{{ code_server_password }}"
+      PASSWORD_FILE: /run/secrets/code_server_password
       DEFAULT_WORKSPACE: /home/coder/project
 
     volumes:
       - ./data/code-server/projects:/home/coder/project:rw
       - ./data/code-server/config:/home/coder/.config:rw
+
+    secrets:
+      - code_server_password
 
     tmpfs:
       - /tmp
@@ -105,6 +108,10 @@ services:
 
     entrypoint: certbot
     networks: [vscode-net]
+
+secrets:
+  code_server_password:
+    file: ./secrets/code_server_password
 
 networks:
   vscode-net:
