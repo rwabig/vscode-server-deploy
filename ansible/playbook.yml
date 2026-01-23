@@ -119,14 +119,6 @@
         name: python3-argon2
         state: present
 
-    - name: Verify Argon2 hashing is available
-      command: python3 - <<'EOF'
-      from argon2 import PasswordHasher
-      PasswordHasher().hash("test")
-      print("argon2 ok")
-      EOF
-      changed_when: false
-
     - name: Set timezone
       timezone:
         name: "{{ timezone }}"
