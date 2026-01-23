@@ -1,13 +1,13 @@
 ###############################################################################
 # AUTHELIA USERS DATABASE (FILE BACKEND)
-# Passwords MUST be Argon2id hashes — NEVER plaintext
+# Passwords are pre-hashed using Authelia CLI (argon2id)
 ###############################################################################
 
 users:
-{% for username, password in authelia_users.items() %}
+{% for username, password_hash in authelia_users.items() %}
   {{ username }}:
     displayname: "{{ username }}"
-    password: "{{ password | password_hash('argon2id') }}"
+    password: "{{ password_hash }}"
     email: "{{ username }}@{{ domain_name }}"
     groups:
       - users
