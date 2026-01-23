@@ -43,7 +43,7 @@ services:
     networks: [vscode-net]
 
   authelia:
-    image: authelia/authelia:4.39.15
+    image: authelia/authelia:4.39
     container_name: authelia
     restart: unless-stopped
 
@@ -59,34 +59,16 @@ services:
       --config /config/configuration.yml
 
     volumes:
-      # Configuration + users database (read-only)
       - ./data/authelia/config:/config:ro
-
-      # SQLite storage backend
-      - ./data/authelia/storage:/var/lib/authelia:rw
-
-      # Notification output (filesystem notifier)
-      - ./data/authelia/notifications:/var/lib/authelia/notifications:rw
-
-      # Runtime socket directory for nginx auth_request
-      - ./data/authelia/run:/run/authelia:rw
-
-      # Secrets (jwt/session/storage encryption keys)
+      - ./data/authelia/storage:/data:rw
       - ./data/authelia/secrets:/secrets:ro
-
-    environment:
-      AUTHELIA_JWT_SECRET_FILE: /secrets/jwt_secret
-      AUTHELIA_SESSION_SECRET_FILE: /secrets/session_secret
-      AUTHELIA_STORAGE_ENCRYPTION_KEY_FILE: /secrets/storage_secret
+      - ./data/authelia/run:/run/authelia:rw
 
     tmpfs:
       - /tmp
 
-    expose:
-      - "9091"
-
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:9091/api/health"]
+      test: ["CMD", "wget", "-qO-", "http://localhost/api/health"]
       interval: 30s
       timeout: 5s
       retries: 3

@@ -344,7 +344,6 @@
     - name: Generate password hashes using Authelia container
       command: >
         docker run --rm
-        -v {{ project_directory }}/data/authelia/tmp:/tmp/authelia
         authelia/authelia:4.39.15
         authelia crypto hash generate argon2 --password "{{ item.value }}"
       register: authelia_hash_output
@@ -352,12 +351,15 @@
       no_log: true
       changed_when: false
 
-    - name: Assemble Authelia users database
+    - name: Assemble Authelia users database (strip CLI prefix)
       set_fact:
         authelia_users_hashed: >-
           {{
             authelia_users_hashed | default({}) |
-            combine({ item.item.key: item.stdout })
+            combine({
+              item.item.key:
+                (item.stdout | regex_replace('^Digest:\\s*', '') | trim)
+            })
           }}
       loop: "{{ authelia_hash_output.results }}"
       no_log: true
