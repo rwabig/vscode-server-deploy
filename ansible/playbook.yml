@@ -104,21 +104,6 @@
           - whois
         state: present
 
-    # ------------------------------------------------------------
-    # 🔐 ARGON2 SUPPORT (CONTROLLER GUARANTEE)
-    # ------------------------------------------------------------
-    - name: Install Argon2 system libraries
-      apt:
-        name:
-          - libargon2-1
-          - argon2
-        state: present
-
-    - name: Install Python argon2 bindings for Ansible password_hash
-      apt:
-        name: python3-argon2
-        state: present
-
     - name: Set timezone
       timezone:
         name: "{{ timezone }}"
@@ -299,6 +284,7 @@
         - "{{ project_directory }}/data/authelia/config"
         - "{{ project_directory }}/data/authelia/storage"
         - "{{ project_directory }}/data/authelia/secrets"
+        - "{{ project_directory }}/data/authelia/tmp"
 
     # ------------------------------------------------------------
     # DIRECTORY OWNERSHIP (HARDENED)
@@ -320,6 +306,7 @@
         - { path: "{{ project_directory }}/data/authelia/config",        owner: "1000", group: "1000", mode: "0750" }
         - { path: "{{ project_directory }}/data/authelia/storage",       owner: "1000", group: "1000", mode: "0750" }
         - { path: "{{ project_directory }}/data/authelia/secrets",       owner: "1000", group: "1000", mode: "0700" }
+        - { path: "{{ project_directory }}/data/authelia/tmp",           owner: "1000", group: "1000", mode: "0700" }
 
     - name: Create nginx runtime directories
       file:
@@ -352,16 +339,27 @@
       no_log: true
 
     # ------------------------------------------------------------
-    # AUTHELIA PASSWORD HASHING (PURE JINJA — ARGON2ID)
+    # AUTHELIA PASSWORD HASHING (OFFICIAL AUTHELIA CLI — ARGON2ID)
     # ------------------------------------------------------------
-    - name: Generate Argon2id password hashes (pure Jinja)
+    - name: Generate password hashes using Authelia container
+      command: >
+        docker run --rm
+        -v {{ project_directory }}/data/authelia/tmp:/tmp/authelia
+        authelia/authelia:4.39.15
+        authelia crypto hash generate argon2 --password "{{ item.value }}"
+      register: authelia_hash_output
+      loop: "{{ vscode_users | dict2items }}"
+      no_log: true
+      changed_when: false
+
+    - name: Assemble Authelia users database
       set_fact:
         authelia_users_hashed: >-
           {{
             authelia_users_hashed | default({}) |
-            combine({ item.key: (item.value | password_hash('argon2id')) })
+            combine({ item.item.key: item.stdout })
           }}
-      loop: "{{ vscode_users | dict2items }}"
+      loop: "{{ authelia_hash_output.results }}"
       no_log: true
 
     # ------------------------------------------------------------
