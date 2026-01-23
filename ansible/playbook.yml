@@ -11,9 +11,14 @@
     admin_email: "{{ deployment_email | default('admin@example.com') }}"
 
     # ============================================================
-    # MULTI-USER AUTH CONFIGURATION
+    # AUTHELIA CONFIGURATION
     # ============================================================
-    htpasswd_path: "/opt/vscode-server/data/nginx/auth/htpasswd"
+    authelia_dir: "/opt/vscode-server/data/authelia"
+    authelia_config: "/opt/vscode-server/data/authelia/configuration.yml"
+    authelia_users: "/opt/vscode-server/data/authelia/users_database.yml"
+    authelia_jwt_secret: "/opt/vscode-server/data/authelia/secrets/jwt_secret"
+    authelia_session_secret: "/opt/vscode-server/data/authelia/secrets/session_secret"
+    authelia_storage_secret: "/opt/vscode-server/data/authelia/secrets/storage_secret"
 
     # ============================================================
     # INFRASTRUCTURE CONFIGURATION
@@ -57,9 +62,6 @@
           - domain_name != 'ide.example.com'
           - admin_email != 'admin@example.com'
           - "'@' in admin_email"
-        fail_msg: |
-          Domain and email must be configured!
-          --extra-vars 'deployment_domain=your.domain.com deployment_email=admin@yourdomain.com'
 
     # ------------------------------------------------------------
     # PLATFORM SAFETY
@@ -99,7 +101,31 @@
           - ufw
           - cron
           - apache2-utils
+          - whois
         state: present
+
+    # ------------------------------------------------------------
+    # 🔐 ARGON2 SUPPORT (CONTROLLER GUARANTEE)
+    # ------------------------------------------------------------
+    - name: Install Argon2 system libraries
+      apt:
+        name:
+          - libargon2-1
+          - argon2
+        state: present
+
+    - name: Install Python argon2 bindings for Ansible password_hash
+      apt:
+        name: python3-argon2
+        state: present
+
+    - name: Verify Argon2 hashing is available
+      command: python3 - <<'EOF'
+      from argon2 import PasswordHasher
+      PasswordHasher().hash("test")
+      print("argon2 ok")
+      EOF
+      changed_when: false
 
     - name: Set timezone
       timezone:
@@ -277,9 +303,13 @@
         - "{{ project_directory }}/data/nginx/auth"
         - "{{ project_directory }}/scripts"
         - "{{ backup_directory }}"
+        - "{{ project_directory }}/data/authelia"
+        - "{{ project_directory }}/data/authelia/config"
+        - "{{ project_directory }}/data/authelia/storage"
+        - "{{ project_directory }}/data/authelia/secrets"
 
     # ------------------------------------------------------------
-    # DIRECTORY OWNERSHIP
+    # DIRECTORY OWNERSHIP (HARDENED)
     # ------------------------------------------------------------
     - name: Set correct ownership for container volumes
       file:
@@ -294,6 +324,10 @@
         - { path: "{{ project_directory }}/data/nginx/run",             owner: "101",  group: "101",  mode: "0755" }
         - { path: "{{ project_directory }}/data/nginx/letsencrypt/logs", owner: "0", group: "0", mode: "0755" }
         - { path: "{{ project_directory }}/data/nginx/auth",             owner: "0", group: "0", mode: "0750" }
+        - { path: "{{ project_directory }}/data/authelia",               owner: "1000", group: "1000", mode: "0750" }
+        - { path: "{{ project_directory }}/data/authelia/config",        owner: "1000", group: "1000", mode: "0750" }
+        - { path: "{{ project_directory }}/data/authelia/storage",       owner: "1000", group: "1000", mode: "0750" }
+        - { path: "{{ project_directory }}/data/authelia/secrets",       owner: "1000", group: "1000", mode: "0700" }
 
     - name: Create nginx runtime directories
       file:
@@ -311,21 +345,57 @@
         - /opt/vscode-server/data/nginx/run
 
     # ------------------------------------------------------------
-    # MULTI-USER AUTH FILE
+    # AUTHELIA SECRETS (FILES, NOT INLINE)
     # ------------------------------------------------------------
-    - name: Create htpasswd file
-      file:
-        path: "{{ htpasswd_path }}"
-        state: touch
-        owner: root
-        group: root
-        mode: "0640"
-
-    - name: Populate htpasswd users
-      command: >
-        htpasswd -bB {{ htpasswd_path }} {{ item.key }} {{ item.value }}
-      loop: "{{ vscode_users | dict2items }}"
+    - name: Generate Authelia secrets if missing
+      copy:
+        dest: "{{ item }}"
+        content: "{{ lookup('password', '/dev/null length=64 chars=ascii_letters,digits') }}"
+        mode: "0600"
+        force: no
+      loop:
+        - "{{ authelia_jwt_secret }}"
+        - "{{ authelia_session_secret }}"
+        - "{{ authelia_storage_secret }}"
       no_log: true
+
+    # ------------------------------------------------------------
+    # AUTHELIA PASSWORD HASHING (ARGON2ID)
+    # ------------------------------------------------------------
+    - name: Generate Argon2id password hashes
+      command: >
+        mkpasswd --method=argon2id {{ item.value }}
+      loop: "{{ vscode_users | dict2items }}"
+      register: authelia_hashes
+      no_log: true
+      changed_when: false
+
+    - name: Build Authelia users dictionary
+      set_fact:
+        authelia_users_hashed: "{{ authelia_users_hashed | default({}) | combine({item.item.key: item.stdout}) }}"
+      loop: "{{ authelia_hashes.results }}"
+      no_log: true
+
+    # ------------------------------------------------------------
+    # AUTHELIA USERS DATABASE
+    # ------------------------------------------------------------
+    - name: Deploy Authelia users database
+      template:
+        src: ../authelia/users_database.yml.j2
+        dest: "{{ authelia_users }}"
+        mode: "0600"
+      vars:
+        authelia_users: "{{ authelia_users_hashed }}"
+      no_log: true
+
+    # ------------------------------------------------------------
+    # AUTHELIA CONFIGURATION
+    # ------------------------------------------------------------
+    - name: Deploy Authelia configuration
+      template:
+        src: ../authelia/configuration.yml.j2
+        dest: "{{ authelia_config }}"
+        mode: "0600"
 
     # ------------------------------------------------------------
     # CONFIG FILES
@@ -457,7 +527,7 @@
           - ""
           - "📋 Access Information:"
           - "   HTTPS URL: https://{{ domain_name }}/"
-          - "   Auth: Nginx multi-user basic auth"
+          - "   Auth: Authelia multi-user login (with logout + session timeout)"
           - ""
           - "🔧 Management Commands:"
           - "   Start/Stop: cd {{ project_directory }} && docker compose [up/down]"

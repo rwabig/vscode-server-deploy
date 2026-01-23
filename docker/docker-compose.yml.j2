@@ -42,6 +42,58 @@ services:
 
     networks: [vscode-net]
 
+  authelia:
+    image: authelia/authelia:4.39.15
+    container_name: authelia
+    restart: unless-stopped
+
+    user: "1000:1000"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    stop_grace_period: 15s
+
+    command: >
+      authelia
+      --config /config/configuration.yml
+
+    volumes:
+      # Configuration + users database (read-only)
+      - ./data/authelia/config:/config:ro
+
+      # SQLite storage backend
+      - ./data/authelia/storage:/var/lib/authelia:rw
+
+      # Notification output (filesystem notifier)
+      - ./data/authelia/notifications:/var/lib/authelia/notifications:rw
+
+      # Runtime socket directory for nginx auth_request
+      - ./data/authelia/run:/run/authelia:rw
+
+      # Secrets (jwt/session/storage encryption keys)
+      - ./data/authelia/secrets:/secrets:ro
+
+    environment:
+      AUTHELIA_JWT_SECRET_FILE: /secrets/jwt_secret
+      AUTHELIA_SESSION_SECRET_FILE: /secrets/session_secret
+      AUTHELIA_STORAGE_ENCRYPTION_KEY_FILE: /secrets/storage_secret
+
+    tmpfs:
+      - /tmp
+
+    expose:
+      - "9091"
+
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9091/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+
+    networks: [vscode-net]
+
   nginx:
     image: "{{ nginx_image | default('nginx:1.28.1-alpine') }}"
     container_name: nginx-proxy
@@ -66,19 +118,19 @@ services:
 
     volumes:
       - ./data/nginx/conf.d:/etc/nginx/conf.d:ro
-      - ./data/nginx/auth:/etc/nginx/auth:ro
       - ./data/nginx/certbot:/var/www/certbot:ro
       - ./data/nginx/letsencrypt:/etc/letsencrypt:ro
-      - ./data/nginx/letsencrypt/logs:/var/log/certbot:rw
-      - ./data/nginx/letsencrypt/work:/var/lib/certbot:rw
       - ./data/nginx/cache:/var/cache/nginx:rw
       - ./data/nginx/run:/var/run:rw
+      - ./data/authelia/run:/run/authelia:ro
 
     tmpfs:
       - /tmp
 
     depends_on:
       code-server:
+        condition: service_healthy
+      authelia:
         condition: service_healthy
 
     healthcheck:
@@ -102,8 +154,8 @@ services:
     volumes:
       - ./data/nginx/letsencrypt:/etc/letsencrypt:rw
       - ./data/nginx/certbot:/var/www/certbot:rw
-      - ./data/nginx/letsencrypt/logs:/var/log/certbot:rw
-      - ./data/nginx/letsencrypt/work:/var/lib/certbot:rw
+      - ./data/nginx/cache:/var/cache/nginx:rw
+      - ./data/nginx/run:/var/run:rw
       - /etc/ssl/certs:/etc/ssl/certs:ro
 
     tmpfs:
