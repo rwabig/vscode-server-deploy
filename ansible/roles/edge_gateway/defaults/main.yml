@@ -1,0 +1,21 @@
+---
+# ============================================================
+# EDGE GATEWAY DEFAULTS
+# ============================================================
+
+edge_gateway_dir: /opt/edge-gateway
+edge_gateway_timezone: UTC
+
+# Let's Encrypt
+edge_gateway_email: admin@example.com
+edge_gateway_domains: []
+
+# Docker images
+edge_gateway_nginx_image: nginx:1.28.1-alpine
+edge_gateway_certbot_image: certbot/certbot:v2.10.0
+
+# Security
+edge_gateway_read_only_rootfs: true
+
+# Logging
+edge_gateway_log_level: warn

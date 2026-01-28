@@ -1,0 +1,47 @@
+# ------------------------------------------------------------
+# HTTP → HTTPS + ACME
+# ------------------------------------------------------------
+server {
+    listen 80;
+    server_name _;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+# ------------------------------------------------------------
+# HEALTHCHECK (internal)
+# ------------------------------------------------------------
+server {
+    listen 127.0.0.1:80;
+    server_name localhost;
+
+    location = /.healthz {
+        return 200 "ok\n";
+        add_header Content-Type text/plain;
+    }
+}
+
+# ------------------------------------------------------------
+# TLS VHOSTS
+# ------------------------------------------------------------
+{% for domain in edge_gateway_domains %}
+server {
+    listen 443 ssl http2;
+    server_name {{ domain }};
+
+    ssl_certificate /etc/letsencrypt/live/{{ domain }}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/{{ domain }}/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    location / {
+        return 502 "No upstream configured for {{ domain }}\n";
+        add_header Content-Type text/plain;
+    }
+}
+{% endfor %}

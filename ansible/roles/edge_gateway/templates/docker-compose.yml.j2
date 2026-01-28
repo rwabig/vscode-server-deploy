@@ -1,0 +1,68 @@
+version: "3.9"
+
+services:
+  nginx:
+    image: "{{ edge_gateway_nginx_image }}"
+    container_name: edge-nginx
+    restart: unless-stopped
+
+    read_only: true
+    cap_drop: [ALL]
+    cap_add:
+      - NET_BIND_SERVICE
+      - SETUID
+      - SETGID
+      - DAC_OVERRIDE
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    stop_grace_period: 15s
+
+    ports:
+      - "80:80"
+      - "443:443"
+
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./data/letsencrypt:/etc/letsencrypt:ro
+      - ./certbot/www:/var/www/certbot:ro
+      - ./data/cache:/var/cache/nginx:rw
+      - ./data/logs:/var/log/nginx:rw
+      - ./data/run:/var/run:rw
+
+    tmpfs:
+      - /tmp
+
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost/.healthz || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+    networks:
+      - edge
+
+  certbot:
+    image: "{{ edge_gateway_certbot_image }}"
+    container_name: edge-certbot
+    restart: "no"
+
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+
+    volumes:
+      - ./data/letsencrypt:/etc/letsencrypt:rw
+      - ./certbot/www:/var/www/certbot:rw
+      - ./data/logs:/var/log/letsencrypt:rw
+      - ./data/run:/var/run:rw
+
+    entrypoint: certbot
+    networks:
+      - edge
+
+networks:
+  edge:
+    external: true

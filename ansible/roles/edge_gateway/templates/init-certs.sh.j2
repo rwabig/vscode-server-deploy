@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+EMAIL="{{ edge_gateway_email }}"
+DOMAINS="{{ edge_gateway_domains | join(' ') }}"
+
+for domain in $DOMAINS; do
+  echo ">>> Requesting certificate for $domain"
+
+  docker compose run --rm certbot certonly \
+    --webroot \
+    --webroot-path /var/www/certbot \
+    --email "$EMAIL" \
+    --agree-tos \
+    --no-eff-email \
+    -d "$domain"
+done

@@ -1,0 +1,191 @@
+---
+# ============================================================
+# EDGE GATEWAY ROLE — MAIN TASKS
+# ============================================================
+
+- name: Assert domain list provided
+  assert:
+    that:
+      - edge_gateway_domains | length > 0
+    fail_msg: >
+      You must define at least one domain:
+      edge_gateway_domains:
+        - vscode.example.com
+        - api.example.com
+
+# ------------------------------------------------------------
+# SYSTEM
+# ------------------------------------------------------------
+- name: Set timezone
+  timezone:
+    name: "{{ edge_gateway_timezone }}"
+
+- name: Ensure required packages present
+  apt:
+    name:
+      - ca-certificates
+      - curl
+      - gnupg
+      - ufw
+    state: present
+    update_cache: true
+
+# ------------------------------------------------------------
+# FIREWALL
+# ------------------------------------------------------------
+- name: Allow SSH
+  ufw:
+    rule: allow
+    port: "22"
+    proto: tcp
+
+- name: Allow HTTP
+  ufw:
+    rule: allow
+    port: "80"
+    proto: tcp
+
+- name: Allow HTTPS
+  ufw:
+    rule: allow
+    port: "443"
+    proto: tcp
+
+- name: Enable firewall
+  ufw:
+    state: enabled
+    policy: deny
+
+# ------------------------------------------------------------
+# DIRECTORIES
+# ------------------------------------------------------------
+- name: Create edge gateway directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ edge_gateway_dir }}"
+    - "{{ edge_gateway_dir }}/nginx"
+    - "{{ edge_gateway_dir }}/nginx/conf.d"
+    - "{{ edge_gateway_dir }}/certbot"
+    - "{{ edge_gateway_dir }}/certbot/www"
+    - "{{ edge_gateway_dir }}/data"
+    - "{{ edge_gateway_dir }}/data/letsencrypt"
+    - "{{ edge_gateway_dir }}/data/cache"
+    - "{{ edge_gateway_dir }}/data/logs"
+    - "{{ edge_gateway_dir }}/data/run"
+    - "{{ edge_gateway_dir }}/scripts"
+
+- name: Set ownership for runtime directories
+  file:
+    path: "{{ item.path }}"
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: "{{ edge_gateway_dir }}/data/cache", owner: "101", group: "101", mode: "0755" }
+    - { path: "{{ edge_gateway_dir }}/data/logs", owner: "101", group: "101", mode: "0755" }
+    - { path: "{{ edge_gateway_dir }}/data/run", owner: "101", group: "101", mode: "0755" }
+
+# ------------------------------------------------------------
+# CONFIG FILES
+# ------------------------------------------------------------
+- name: Deploy docker-compose.yml
+  template:
+    src: docker-compose.yml.j2
+    dest: "{{ edge_gateway_dir }}/docker-compose.yml"
+    mode: "0644"
+
+- name: Deploy nginx main config
+  template:
+    src: nginx.conf.j2
+    dest: "{{ edge_gateway_dir }}/nginx/nginx.conf"
+    mode: "0644"
+
+- name: Deploy vhosts config
+  template:
+    src: vhosts.conf.j2
+    dest: "{{ edge_gateway_dir }}/nginx/conf.d/default.conf"
+    mode: "0644"
+
+- name: Deploy cert bootstrap script
+  template:
+    src: init-certs.sh.j2
+    dest: "{{ edge_gateway_dir }}/scripts/init-certs.sh"
+    mode: "0755"
+
+- name: Deploy cert renewal script
+  template:
+    src: renew-certs.sh.j2
+    dest: "{{ edge_gateway_dir }}/scripts/renew-certs.sh"
+    mode: "0755"
+
+# ------------------------------------------------------------
+# DOCKER NETWORK
+# ------------------------------------------------------------
+- name: Ensure edge network exists
+  command: docker network create edge
+  register: edge_net
+  failed_when: false
+  changed_when: "'created' in edge_net.stdout"
+
+# ------------------------------------------------------------
+# START SERVICES (HTTP MODE)
+# ------------------------------------------------------------
+- name: Start nginx (HTTP only)
+  command: docker compose up -d nginx
+  args:
+    chdir: "{{ edge_gateway_dir }}"
+  register: compose_nginx
+
+# ------------------------------------------------------------
+# CERTIFICATE BOOTSTRAP
+# ------------------------------------------------------------
+- name: Check for existing certs
+  stat:
+    path: "{{ edge_gateway_dir }}/data/letsencrypt/live/{{ edge_gateway_domains[0] }}/fullchain.pem"
+  register: cert_exists
+
+- name: Bootstrap Let's Encrypt certificates
+  command: "{{ edge_gateway_dir }}/scripts/init-certs.sh"
+  args:
+    chdir: "{{ edge_gateway_dir }}"
+  when: not cert_exists.stat.exists
+  register: certbot_result
+  changed_when: certbot_result.rc == 0
+
+# ------------------------------------------------------------
+# START FULL STACK
+# ------------------------------------------------------------
+- name: Start full edge gateway stack
+  command: docker compose up -d
+  args:
+    chdir: "{{ edge_gateway_dir }}"
+
+# ------------------------------------------------------------
+# FINAL VERIFICATION
+# ------------------------------------------------------------
+- name: Verify nginx is running
+  command: docker compose ps nginx
+  args:
+    chdir: "{{ edge_gateway_dir }}"
+  changed_when: false
+
+- name: Display deployment summary
+  debug:
+    msg:
+      - "============================================================"
+      - "✅ Edge Gateway deployed successfully"
+      - "============================================================"
+      - "🌐 Domains: {{ edge_gateway_domains | join(', ') }}"
+      - "📧 Email: {{ edge_gateway_email }}"
+      - "📁 Path: {{ edge_gateway_dir }}"
+      - ""
+      - "🔧 Management:"
+      - "   cd {{ edge_gateway_dir }}"
+      - "   docker compose ps"
+      - "   docker compose logs -f nginx"
+      - "============================================================"
